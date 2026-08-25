@@ -74,6 +74,9 @@ canvas{display:block;position:fixed;top:0;left:0}
 #mpPlayers.active{display:flex;gap:16px}
 .mp-pl{display:flex;align-items:center;gap:6px}
 .mp-dot{width:8px;height:8px;border-radius:50%}
+#nameInput{background:rgba(255,255,255,.08);border:2px solid rgba(255,255,255,.15);border-radius:10px;padding:12px 20px;font-size:1.2rem;color:#fff;text-align:center;letter-spacing:2px;width:240px;font-weight:700;outline:none;margin-bottom:10px}
+#nameInput:focus{border-color:rgba(255,93,93,.5)}
+#nameInput::placeholder{color:#555;letter-spacing:2px;font-size:.9rem}
 </style>
 </head>
 <body>
@@ -82,6 +85,7 @@ canvas{display:block;position:fixed;top:0;left:0}
   <h1>KNIGHT</h1>
   <div class="sub">BULLET HEAVEN</div>
   <div class="start-btns">
+    <input type="text" id="nameInput" maxlength="12" placeholder="Your Name">
     <button class="btn" onclick="startSolo()">PLAY SOLO</button>
     <button class="btn btn-blue" onclick="showLobby('host')">HOST GAME</button>
     <button class="btn btn-green" onclick="showLobby('join')">JOIN GAME</button>
@@ -185,6 +189,7 @@ var cameraX=0,cameraY=0;
 
 var PLAYER_COLORS=['#ff5d5d','#5d9fff','#5dff88','#ffdd5d'];
 var PLAYER_NAMES=['Knight','Paladin','Ranger','Cleric'];
+var playerUsername='Player';
 
 var netMode='none';
 var peer=null;
@@ -294,7 +299,7 @@ function findNearestPlayerTo(x,y){
   return best;
 }
 
-function Knight(slot){
+function Knight(slot,name){
   this.slot=slot;
   this.x=(AR.l+AR.r)/2;this.y=(AR.t+AR.b)/2;
   if(slot>0){this.x+=rand(-200,200);this.y+=rand(-200,200);}
@@ -315,7 +320,7 @@ function Knight(slot){
   this.stall=rand(0,0.5);
   this.invinceTimer=0;this.contactCD=0;
   this.color=PLAYER_COLORS[slot];
-  this.name=PLAYER_NAMES[slot];
+  this.name=name||PLAYER_NAMES[slot];
   this.magnetRange=140;
   this.swingState=0;this.swingT=rand(2,5);this.swingReady=false;
   this.swingAim=0;this.swingHit={};
@@ -1149,6 +1154,15 @@ function handleHostMessage(msg){
     var data=JSON.parse(msg);
     if(data.t==='i'){
       remoteInputs[data.slot]={mx:data.mx,my:data.my,sk:data.sk};
+    }else if(data.t==='join'){
+      for(var i=0;i<players.length;i++){
+        if(players[i].slot===data.slot){
+          players[i].name=data.name||PLAYER_NAMES[data.slot];
+          break;
+        }
+      }
+      broadcastPlayerList();
+      updateLobbySlots();
     }
   }catch(e){}
 }
@@ -1161,8 +1175,8 @@ function handleClientMessage(msg){
       players=[];
       for(var i=0;i<data.ps.length;i++){
         var pd=data.ps[i];
-        var k=new Knight(pd.slot);
-        k.color=pd.color;k.name=pd.name;
+        var k=new Knight(pd.slot,pd.name);
+        k.color=pd.color;
         players.push(k);
       }
       for(var i=0;i<players.length;i++){
@@ -1181,15 +1195,19 @@ function handleClientMessage(msg){
     }else if(data.t==='s'){
       applyState(data);
     }else if(data.t==='players'){
+      localSlot=data.slot;
       players=[];
       for(var i=0;i<data.ps.length;i++){
         var pd=data.ps[i];
-        var k=new Knight(pd.slot);
-        k.color=pd.color;k.name=pd.name;
+        var k=new Knight(pd.slot,pd.name);
+        k.color=pd.color;
         players.push(k);
       }
       for(var i=0;i<players.length;i++){
         if(players[i].slot===localSlot){localPlayer=players[i];break;}
+      }
+      if(connToHost&&connToHost.open){
+        connToHost.send(JSON.stringify({t:'join',slot:localSlot,name:playerUsername}));
       }
     }else if(data.t==='gameover'){
       doGameOver();
@@ -1240,6 +1258,7 @@ function doJoin(){
     connToHost=peer.connect('knight-'+code);
     connToHost.on('open',function(){
       console.log('Connected to host');
+      connToHost.send(JSON.stringify({t:'join',name:playerUsername}));
       document.getElementById('lobbySub').textContent='Connected! Waiting for host to start...';
       document.getElementById('joinForm').style.display='none';
       document.getElementById('lobbyCode').textContent=code;
@@ -1254,23 +1273,28 @@ function doJoin(){
 function updateLobbySlots(){
   for(var i=0;i<4;i++){
     var el=document.getElementById('ps'+i);
+    var nameEl=el.querySelector('.player-slot-name');
     var found=false;
     for(var j=0;j<players.length;j++){
       if(players[j].slot===i){
         found=true;
         el.classList.add('occupied');
+        nameEl.textContent=players[j].name;
         el.querySelector('.player-slot-status').textContent=(i===localSlot?(netMode==='host'?'HOST':'YOU'):'Connected');
         break;
       }
     }
     if(!found){
       el.classList.remove('occupied');
+      nameEl.textContent='Player '+(i+1);
       el.querySelector('.player-slot-status').textContent='Waiting...';
     }
   }
 }
 
 function showLobby(mode){
+  var ni=document.getElementById('nameInput');
+  playerUsername=ni.value.trim()||'Player';
   document.getElementById('startScreen').style.display='none';
   document.getElementById('lobbyScreen').classList.add('active');
   document.getElementById('joinForm').style.display=(mode==='join'?'flex':'none');
@@ -1278,7 +1302,7 @@ function showLobby(mode){
   document.getElementById('lobbyTitle').textContent=mode==='host'?'HOSTING':'JOINING';
   document.getElementById('lobbySub').textContent=mode==='host'?'Share this code with friends:':'Enter your friend\'s code:';
   if(mode==='host'){
-    players=[new Knight(0)];
+    players=[new Knight(0,playerUsername)];
     localPlayer=players[0];
     initHost();
   }
@@ -1330,6 +1354,8 @@ addEventListener('keyup',function(e){keys[e.key.toLowerCase()]=false;});
 
 function startSolo(){
   netMode='none';localSlot=0;
+  var ni=document.getElementById('nameInput');
+  playerUsername=ni.value.trim()||'Player';
   document.getElementById('startScreen').style.display='none';
   document.getElementById('hud').classList.add('active');
   document.getElementById('statsPanel').classList.add('active');
@@ -1337,7 +1363,7 @@ function startSolo(){
   state='fight';
   resize();
   ballR=30;
-  players=[new Knight(0)];
+  players=[new Knight(0,playerUsername)];
   localPlayer=players[0];
   var a=rand(0,TAU),s=rand(100,200);
   localPlayer.vx=Math.cos(a)*s;localPlayer.vy=Math.sin(a)*s;
