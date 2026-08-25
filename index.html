@@ -717,6 +717,8 @@ function showCards(){
         localPlayer.applyUpgrade(c.upgrade,c.rarity.mult);
         if(netMode==='host'){
           broadcastState();
+        }else if(netMode==='client'&&connToHost&&connToHost.open){
+          connToHost.send(JSON.stringify({t:'card',upg:c.upgrade.id,mult:c.rarity.mult}));
         }
         overlay.classList.remove('active');
         state='fight';updateHUD();
@@ -1144,7 +1146,7 @@ function applyState(s){
   beams=[];
   for(var i=0;i<s.bs.length;i++){
     var d=s.bs[i];
-    beams.push({x1:d.x1,y1:d.y1,x2:d.x2,y2:d.y2,l:d.l,max:d.m});
+    beams.push({x1:d.x1,y1:d.y1,x2:d.x2,y2:d.y2,life:d.l,max:d.m});
   }
   wave=s.w;level=s.l;curExp=s.ce;expNeeded=s.en;totalKills=s.k;gameTime=s.gt;shake=s.sh;
 }
@@ -1152,8 +1154,8 @@ function applyState(s){
 function broadcastState(){
   var s=serializeState();
   var msg=JSON.stringify(s);
-  for(var i=0;i<connections.length;i++){
-    if(connections[i].open)connections[i].send(msg);
+  for(var i=connections.length-1;i>=0;i--){
+    try{connections[i].send(msg);}catch(e){connections.splice(i,1);}
   }
 }
 
@@ -1175,8 +1177,8 @@ function broadcastStart(){
   var pl=[];
   for(var i=0;i<players.length;i++)pl.push(serializePlayer(players[i]));
   var msg=JSON.stringify({t:'start',state:s,ps:pl,arena:{l:AR.l,t:AR.t,r:AR.r,b:AR.b}});
-  for(var i=0;i<connections.length;i++){
-    if(connections[i].open)connections[i].send(msg);
+  for(var i=connections.length-1;i>=0;i--){
+    try{connections[i].send(msg);}catch(e){connections.splice(i,1);}
   }
 }
 
@@ -1192,6 +1194,15 @@ function handleHostMessage(msg){
     var data=JSON.parse(msg);
     if(data.t==='i'){
       remoteInputs[data.slot]={mx:data.mx,my:data.my,sk:data.sk};
+    }else if(data.t==='card'){
+      for(var i=0;i<players.length;i++){
+        if(players[i].slot===data.slot){
+          var upg=UPGRADES.find(function(u){return u.id===data.upg});
+          if(upg)players[i].applyUpgrade(upg,data.mult);
+          break;
+        }
+      }
+      broadcastState();
     }else if(data.t==='join'){
       for(var i=0;i<players.length;i++){
         if(players[i].slot===data.slot){
@@ -1220,6 +1231,8 @@ function handleClientMessage(msg){
       for(var i=0;i<players.length;i++){
         if(players[i].slot===localSlot){localPlayer=players[i];break;}
       }
+      if(!localPlayer&&players.length>0)localPlayer=players[0];
+      resize();
       applyState(data.state);
       state='fight';
       document.getElementById('startScreen').style.display='none';
@@ -1460,6 +1473,7 @@ function frame(timestamp){
       }
     }
     render();
+    if(netMode==='client')updateHUD();
     if(netMode==='client')checkLevelSync();
     skillPressed=false;
   }
