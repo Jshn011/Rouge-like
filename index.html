@@ -1210,8 +1210,10 @@ function handleHostMessage(msg){
           break;
         }
       }
-      broadcastPlayerList();
-      updateLobbySlots();
+      if(state!=='fight'&&state!=='cards'){
+        broadcastPlayerList();
+        updateLobbySlots();
+      }
     }
   }catch(e){}
 }
@@ -1246,19 +1248,21 @@ function handleClientMessage(msg){
     }else if(data.t==='s'){
       applyState(data);
     }else if(data.t==='players'){
-      localSlot=data.slot;
-      players=[];
-      for(var i=0;i<data.ps.length;i++){
-        var pd=data.ps[i];
-        var k=new Knight(pd.slot,pd.name);
-        k.color=pd.color;
-        players.push(k);
-      }
-      for(var i=0;i<players.length;i++){
-        if(players[i].slot===localSlot){localPlayer=players[i];break;}
-      }
-      if(connToHost&&connToHost.open){
-        connToHost.send(JSON.stringify({t:'join',slot:localSlot,name:playerUsername}));
+      if(state!=='fight'&&state!=='cards'){
+        localSlot=data.slot;
+        players=[];
+        for(var i=0;i<data.ps.length;i++){
+          var pd=data.ps[i];
+          var k=new Knight(pd.slot,pd.name);
+          k.color=pd.color;
+          players.push(k);
+        }
+        for(var i=0;i<players.length;i++){
+          if(players[i].slot===localSlot){localPlayer=players[i];break;}
+        }
+        if(connToHost&&connToHost.open){
+          connToHost.send(JSON.stringify({t:'join',slot:localSlot,name:playerUsername}));
+        }
       }
     }else if(data.t==='gameover'){
       doGameOver();
