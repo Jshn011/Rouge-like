@@ -1167,8 +1167,8 @@ function broadcastPlayerList(){
   var pl=[];
   for(var i=0;i<players.length;i++)pl.push(serializePlayer(players[i]));
   var msg=JSON.stringify({t:'players',ps:pl});
-  for(var i=0;i<connections.length;i++){
-    if(connections[i].open)connections[i].send(msg);
+  for(var i=connections.length-1;i>=0;i--){
+    try{connections[i].send(msg);}catch(e){connections.splice(i,1);}
   }
 }
 
@@ -1248,8 +1248,10 @@ function handleClientMessage(msg){
     }else if(data.t==='s'){
       applyState(data);
     }else if(data.t==='players'){
-      if(state!=='fight'&&state!=='cards'){
+      if(data.slot!==undefined){
         localSlot=data.slot;
+      }
+      if(state!=='fight'&&state!=='cards'){
         players=[];
         for(var i=0;i<data.ps.length;i++){
           var pd=data.ps[i];
