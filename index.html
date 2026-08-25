@@ -77,6 +77,24 @@ canvas{display:block;position:fixed;top:0;left:0}
 #nameInput{background:rgba(255,255,255,.08);border:2px solid rgba(255,255,255,.15);border-radius:10px;padding:12px 20px;font-size:1.2rem;color:#fff;text-align:center;letter-spacing:2px;width:240px;font-weight:700;outline:none;margin-bottom:10px}
 #nameInput:focus{border-color:rgba(255,93,93,.5)}
 #nameInput::placeholder{color:#555;letter-spacing:2px;font-size:.9rem}
+#cardOverlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.75);z-index:200;backdrop-filter:blur(4px)}
+#cardOverlay.active{display:flex}
+#cardContainer{display:flex;gap:20px;flex-wrap:wrap;justify-content:center}
+.card{width:220px;padding:24px 16px;border-radius:16px;cursor:pointer;text-align:center;transition:all .25s;position:relative;overflow:hidden}
+.card:hover{transform:translateY(-8px) scale(1.04)}
+.card .rarity-tag{font-size:.7rem;font-weight:700;letter-spacing:3px;text-transform:uppercase;margin-bottom:12px}
+.card .card-icon{font-size:2.8rem;margin-bottom:8px}
+.card .card-name{font-size:1.1rem;font-weight:700;margin-bottom:6px}
+.card .card-desc{font-size:.8rem;color:#aaa;line-height:1.4}
+.card .card-mult{font-size:.75rem;color:#888;margin-top:8px;font-style:italic}
+.card.common{background:linear-gradient(145deg,#1e2a1e,#141e14);border:2px solid #4a7a4a}
+.card.common .rarity-tag{color:#6aaa6a}
+.card.rare{background:linear-gradient(145deg,#1e2a4a,#141e3a);border:2px solid #4a7acc}
+.card.rare .rarity-tag{color:#66aaff}
+.card.epic{background:linear-gradient(145deg,#3a1e4a,#2a143a);border:2px solid #9a4acc}
+.card.epic .rarity-tag{color:#bb66ee}
+.card.legendary{background:linear-gradient(145deg,#4a3a1e,#3a2a14);border:2px solid #cc9a4a;box-shadow:0 0 30px rgba(204,154,74,.3)}
+.card.legendary .rarity-tag{color:#ffcc66}
 </style>
 </head>
 <body>
@@ -657,7 +675,20 @@ function collectExp(value){
     expNeeded=Math.floor(20+level*8+level*level*0.5);
     onLevelUp();
   }
+  if(netMode==='client'){
+    if(connToHost&&connToHost.open){
+      connToHost.send(JSON.stringify({t:'exp',ce:curExp,en:expNeeded,l:level,k:totalKills}));
+    }
+  }
   updateHUD();
+}
+
+var prevLevel=1;
+function checkLevelSync(){
+  if(netMode==='client'&&level!==prevLevel){
+    prevLevel=level;
+    onLevelUp();
+  }
 }
 
 function onLevelUp(){
@@ -674,7 +705,7 @@ function showCards(){
   container.innerHTML='';
   var cards=generateCards(3);
   for(var i=0;i<cards.length;i++){
-    (function(c){
+    (function(c,idx){
       var div=document.createElement('div');
       div.className='card '+c.rarity.id;
       div.innerHTML='<div class="rarity-tag" style="color:'+c.rarity.color+'">'+c.rarity.label+'</div>'+
@@ -683,16 +714,23 @@ function showCards(){
         '<div class="card-desc">'+c.upgrade.desc+'</div>'+
         (c.rarity.mult>1?'<div class="card-mult">x'+c.rarity.mult.toFixed(1)+' effect</div>':'');
       div.onclick=function(){
-        c.upgrade.apply(localPlayer);
-        if(c.rarity.mult!==1)c.upgrade.apply(localPlayer);
+        localPlayer.applyUpgrade(c.upgrade,c.rarity.mult);
+        if(netMode==='host'){
+          broadcastState();
+        }
         overlay.classList.remove('active');
         state='fight';updateHUD();
       };
       container.appendChild(div);
-    })(cards[i]);
+    })(cards[i],i);
   }
   overlay.classList.add('active');
 }
+
+Knight.prototype.applyUpgrade=function(upg,mult){
+  upg.apply(this);
+  if(mult&&mult!==1)upg.apply(this);
+};
 
 function playerTakeDamage(target,dmg){
   if(!target||target.invinceTimer>0||target.hp<=0)return;
@@ -1384,10 +1422,12 @@ function frame(timestamp){
   lastTime=timestamp;
   if(state==='fight'||state==='cards'){
     if(state==='fight'){
-      var sdt=rdt*timeScale;
-      var steps=Math.min(Math.ceil(sdt/0.008),5);
-      var subDt=sdt/steps;
-      for(var i=0;i<steps;i++)step(subDt);
+      if(netMode!=='client'){
+        var sdt=rdt*timeScale;
+        var steps=Math.min(Math.ceil(sdt/0.008),5);
+        var subDt=sdt/steps;
+        for(var i=0;i<steps;i++)step(subDt);
+      }
 
       if(netMode==='host'){
         netTick+=rdt;
@@ -1420,6 +1460,7 @@ function frame(timestamp){
       }
     }
     render();
+    if(netMode==='client')checkLevelSync();
     skillPressed=false;
   }
 }
